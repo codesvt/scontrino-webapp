@@ -1,0 +1,15 @@
+[project]
+name = "scontrino-api"
+version = "2.0.0"
+description = "KI-gestützte Familien-Buchhaltung (Backend)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "python-multipart>=0.0.9",
+    "pillow>=10.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "tenacity>=9.0.0",
+    "openai>=2.0.0",
+]
