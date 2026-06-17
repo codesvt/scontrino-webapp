@@ -1,7 +1,6 @@
 services:
   scontrino-webapp:
     build: .
-    network_mode: host
     ports:
       - "8000:8000"
     environment:
