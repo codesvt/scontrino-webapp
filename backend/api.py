@@ -7,7 +7,7 @@ import uuid
 from typing import Any, Dict, List, Tuple
 
 from PIL import Image
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +17,7 @@ from database import (
     loesche_hauptbuch_eintrag, prüfe_duplikat,
     prüfe_existiert_in_posteingang, speichere_roh_beleg,
     verbuche_eintrag, hole_hauptbuch_daten,
+    hole_roh_beleg_benutzer,
 )
 from receipt_auditor import BelegAuditor
 
@@ -73,10 +74,11 @@ def _ki_dict_aus_ergebnis(ergebnis) -> dict:
             {"artikel_raw": a.artikel_raw, "vorgeschlagene_kategorie": a.vorgeschlagene_kategorie}
             for a in ergebnis.ausreisser
         ],
+        "notiz_vorschlag": ergebnis.notiz_vorschlag,
     }
 
 
-def _process_uploads(job_id: str, files: List[Tuple[str, bytes]]):
+def _process_uploads(job_id: str, files: List[Tuple[str, bytes]], benutzer: str = "Walter"):
     for filename, contents in files:
         with _jobs_lock:
             if _jobs[job_id]["cancelled"]:
@@ -106,7 +108,7 @@ def _process_uploads(job_id: str, files: List[Tuple[str, bytes]]):
                 raise ValueError("KI-Analyse ergab kein Ergebnis")
 
             ki_dict = _ki_dict_aus_ergebnis(ergebnis)
-            neue_id = speichere_roh_beleg(filename, ki_dict, contents)
+            neue_id = speichere_roh_beleg(filename, ki_dict, contents, benutzer)
 
             with _jobs_lock:
                 _jobs[job_id]["results"][filename] = {
@@ -150,7 +152,10 @@ async def get_config():
 
 
 @app.post("/api/upload")
-async def upload_files(files: List[UploadFile] = File(...)):
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    benutzer: str = Form("Walter"),
+):
     job_id = str(uuid.uuid4())
     total = len(files)
 
@@ -166,6 +171,7 @@ async def upload_files(files: List[UploadFile] = File(...)):
             "fehler": 0,
             "results": {},
             "savedIds": [],
+            "benutzer": benutzer,
         }
 
     file_data: List[Tuple[str, bytes]] = []
@@ -173,7 +179,7 @@ async def upload_files(files: List[UploadFile] = File(...)):
         contents = await f.read()
         file_data.append((f.filename or "unbekannt", contents))
 
-    thread = threading.Thread(target=_process_uploads, args=(job_id, file_data), daemon=True)
+    thread = threading.Thread(target=_process_uploads, args=(job_id, file_data, benutzer), daemon=True)
     thread.start()
 
     return {"jobId": job_id, "total": total}
@@ -207,8 +213,9 @@ async def get_receipts():
             "dateiname": dateiname,
             "kiDaten": ki_dict,
             "hatBild": bild_blob is not None,
+            "benutzer": benutzer,
         }
-        for id_, dateiname, ki_dict, bild_blob in belege
+        for id_, dateiname, ki_dict, bild_blob, benutzer in belege
     ]
 
 
@@ -226,9 +233,11 @@ async def book_receipt(receipt_id: int, data: dict):
     betrag = data.get("betrag")
     kategorie = data.get("kategorie")
     notiz = data.get("notiz", "")
+    positionen = data.get("positionen")
     if not datum or betrag is None or not kategorie:
         raise HTTPException(400, "datum, betrag und kategorie sind erforderlich")
-    verbuche_eintrag(receipt_id, datum, float(betrag), kategorie, notiz)
+    benutzer = hole_roh_beleg_benutzer(receipt_id)
+    verbuche_eintrag(receipt_id, datum, float(betrag), kategorie, notiz, benutzer, positionen=positionen)
     return {"status": "ok"}
 
 
@@ -260,8 +269,10 @@ async def get_ledger():
             "kategorie": kategorie,
             "belegRohId": beleg_roh_id,
             "notiz": notiz,
+            "benutzer": benutzer,
+            "erstellt": erstellt,
         }
-        for id_, datum, gesamtbetrag, kategorie, beleg_roh_id, notiz in daten
+        for id_, datum, gesamtbetrag, kategorie, beleg_roh_id, notiz, benutzer, erstellt in daten
     ]
 
 
@@ -271,9 +282,10 @@ async def add_manual_entry(data: dict):
     betrag = data.get("betrag")
     kategorie = data.get("kategorie")
     notiz = data.get("notiz", "")
+    benutzer = data.get("benutzer", "Walter")
     if not datum or betrag is None or not kategorie:
         raise HTTPException(400, "datum, betrag und kategorie sind erforderlich")
-    verbuche_eintrag(None, datum, float(betrag), kategorie, notiz)
+    verbuche_eintrag(None, datum, float(betrag), kategorie, notiz, benutzer)
     return {"status": "ok"}
 
 
@@ -288,7 +300,7 @@ async def export_csv():
     daten = hole_hauptbuch_daten()
     output = io.StringIO()
     writer = csv_module.writer(output)
-    writer.writerow(["ID", "Datum", "Gesamtbetrag", "Kategorie", "Beleg Roh ID", "Notiz"])
+    writer.writerow(["ID", "Datum", "Gesamtbetrag", "Kategorie", "Beleg Roh ID", "Notiz", "Benutzer", "Erstellt"])
     for row in daten:
         writer.writerow(row)
     return Response(
