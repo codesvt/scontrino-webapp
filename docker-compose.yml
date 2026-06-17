@@ -2,7 +2,7 @@ services:
   scontrino-webapp:
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       - OPENAI_API_KEY
       - DB_PATH=/data/buchhaltung.db
