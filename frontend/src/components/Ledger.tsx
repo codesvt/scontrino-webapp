@@ -1,9 +1,5 @@
 import { useState, useEffect } from "react";
-import {
-  getLedger,
-  addManualEntry,
-  deleteLedgerEntry,
-} from "../api";
+import { getLedger, addManualEntry, deleteLedgerEntry } from "../api";
 import { useTheme } from "../theme";
 import type { LedgerEntry } from "../types";
 
@@ -46,13 +42,14 @@ function csvEscape(value: string | number): string {
   return str;
 }
 
-export default function Ledger() {
+export default function Ledger({ benutzer }: { benutzer: string }) {
   const { tokens: t } = useTheme();
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortField, setSortField] = useState<"datum" | "erstellt">("datum");
   const [showManual, setShowManual] = useState(false);
   const [mDatum, setMDatum] = useState(new Date().toISOString().slice(0, 10));
-  const [mBetrag, setMBetrag] = useState(0);
+  const [mBetrag, setMBetrag] = useState("");
   const [mKat, setMKat] = useState("Sonstiges");
   const [mNotiz, setMNotiz] = useState("");
 
@@ -68,12 +65,13 @@ export default function Ledger() {
   const summe = entries.reduce((a, e) => a + e.gesamtbetrag, 0);
 
   function handleExportCSV() {
-    const header = ["Datum", "Betrag", "Kategorie", "Notiz"];
+    const header = ["Datum", "Betrag", "Kategorie", "Notiz", "Benutzer"];
     const rows = entries.map((e) => [
       e.datum,
       e.gesamtbetrag.toFixed(2),
       e.kategorie,
       e.notiz,
+      e.benutzer,
     ]);
 
     const csvContent =
@@ -91,16 +89,26 @@ export default function Ledger() {
     URL.revokeObjectURL(url);
   }
 
+  const sorted = [...entries].sort((a, b) => {
+    if (sortField === "erstellt") {
+      return b.erstellt.localeCompare(a.erstellt);
+    }
+    return b.datum.localeCompare(a.datum) || b.id - a.id;
+  });
+
   async function handleManual() {
     try {
+      const betrag = parseFloat(mBetrag) || 0;
+      if (betrag <= 0) return;
       await addManualEntry({
         datum: mDatum,
-        betrag: mBetrag,
+        betrag,
         kategorie: mKat,
         notiz: mNotiz,
+        benutzer,
       });
       setShowManual(false);
-      setMBetrag(0);
+      setMBetrag("");
       setMNotiz("");
       await load();
     } catch {}
@@ -115,13 +123,13 @@ export default function Ledger() {
     <div>
       <div style={{ marginBottom: "0.75rem" }}>
         <button onClick={handleExportCSV} style={btnSecondary(t)}>
-          📄 CSV Export
+          CSV Export
         </button>
         <button
           onClick={() => setShowManual(!showManual)}
           style={{ ...btnSecondary(t), marginLeft: "0.5rem" }}
         >
-          ➕ Manuelle Buchung
+          Manuelle Buchung
         </button>
       </div>
 
@@ -159,11 +167,11 @@ export default function Ledger() {
                 Betrag (€)
               </label>
               <input
-                type="number"
-                step="1"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 value={mBetrag}
-                onChange={(e) => setMBetrag(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setMBetrag(e.target.value)}
+                placeholder="0.00"
                 style={{ ...inputStyle(t), width: 120 }}
               />
             </div>
@@ -196,7 +204,7 @@ export default function Ledger() {
           </div>
           <button
             onClick={handleManual}
-            disabled={mBetrag <= 0}
+            disabled={!mBetrag || parseFloat(mBetrag) <= 0}
             style={{ ...btnPrimary(t), color: "#fff" }}
           >
             Speichern
@@ -204,11 +212,36 @@ export default function Ledger() {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: "1rem",
+          marginBottom: "0.75rem",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
         <strong style={{ color: t.text }}>Summe: {summe.toFixed(2)} €</strong>
-        <span style={{ color: t.textMuted }}>
-          ({entries.length} Buchungen)
-        </span>
+        <span style={{ color: t.textMuted }}>({entries.length} Buchungen)</span>
+        <span style={{ color: t.border, margin: "0 0.25rem" }}>|</span>
+        <label style={{ fontSize: "0.8rem", color: t.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+          sortieren nach
+          <select
+            value={sortField}
+            onChange={(e) => setSortField(e.target.value as "datum" | "erstellt")}
+            style={{
+              padding: "0.15rem 0.3rem",
+              border: `1px solid ${t.borderInput}`,
+              borderRadius: 3,
+              fontSize: "0.75rem",
+              background: t.bg,
+              color: t.text,
+            }}
+          >
+            <option value="datum">Datum</option>
+            <option value="erstellt">Erstelldatum</option>
+          </select>
+        </label>
       </div>
 
       {loading ? (
@@ -230,22 +263,26 @@ export default function Ledger() {
                 Kategorie
               </th>
               <th style={{ textAlign: "left", padding: "0.4rem" }}>Notiz</th>
+              <th style={{ textAlign: "left", padding: "0.4rem" }}>Person</th>
               <th style={{ textAlign: "left", padding: "0.4rem" }}>Aktion</th>
             </tr>
           </thead>
           <tbody>
-            {entries.map((e) => (
+            {sorted.map((e) => (
               <tr
                 key={e.id}
                 style={{ borderBottom: `1px solid ${t.borderLight}` }}
               >
                 <td style={{ padding: "0.3rem 0.4rem" }}>{fmt(e.datum)}</td>
-                <td style={{ padding: "0.3rem 0.4rem", fontWeight: 600 }}>
+                <td style={{ padding: "0.3rem 0.4rem", fontWeight: 600, whiteSpace: "nowrap" }}>
                   {e.gesamtbetrag.toFixed(2)} €
                 </td>
                 <td style={{ padding: "0.3rem 0.4rem" }}>{e.kategorie}</td>
                 <td style={{ padding: "0.3rem 0.4rem", color: t.textMuted }}>
                   {e.notiz || "—"}
+                </td>
+                <td style={{ padding: "0.3rem 0.4rem", fontSize: "0.8rem" }}>
+                  {e.benutzer}
                 </td>
                 <td style={{ padding: "0.3rem 0.4rem" }}>
                   <button

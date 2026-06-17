@@ -7,7 +7,7 @@ import {
   checkDuplicate,
 } from "../api";
 import { useTheme } from "../theme";
-import type { Receipt } from "../types";
+import type { Receipt, SplitEntry } from "../types";
 
 const KATEGORIEN = [
   "Arbeitsnebenkosten",
@@ -114,7 +114,7 @@ export default function Inbox({
     return (
       <div>
         <p style={{ color: t.success, fontWeight: 600 }}>
-          🎉 Posteingang leer – alle Belege sind verbucht!
+          Posteingang leer – alle Belege sind verbucht!
         </p>
       </div>
     );
@@ -135,7 +135,7 @@ export default function Inbox({
           borderRadius: 4,
         }}
       >
-        ⚠️ Beim Verbuchen werden die hinterlegten Bilder aus dem System
+        Beim Verbuchen werden die hinterlegten Bilder aus dem System
         gelöscht.
       </p>
       {receipts.map((r) => (
@@ -183,26 +183,34 @@ function ReceiptCard({
   const [expanded, setExpanded] = useState(false);
   const [betrag, setBetrag] = useState(receipt.kiDaten.gesamtbetrag);
   const [kat, setKat] = useState(vater(receipt.kiDaten.hauptkategorie));
-  const [notiz, setNotiz] = useState("");
+  const [notiz, setNotiz] = useState(receipt.kiDaten.notiz_vorschlag || "");
   const [datum, setDatum] = useState(receipt.kiDaten.datum || "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [splitMode, setSplitMode] = useState(false);
+  const [splits, setSplits] = useState<SplitEntry[]>([]);
 
   async function handleBook() {
     setBusy(true);
     setMsg("");
     try {
-      const d = datum || new Date().toISOString().slice(0, 10);
+      const d = datum;
+      const b = betrag;
+      if (!d || !b) return;
+      const positionen = splitMode && splits.length > 0
+        ? splits.map((s) => ({ betrag: s.betrag, kategorie: s.kategorie, notiz: s.notiz }))
+        : undefined;
       await bookReceipt(receipt.id, {
         datum: d,
-        betrag,
+        betrag: b,
         kategorie: kat,
         notiz,
+        positionen,
       });
-      setMsg("✅ Verbucht!");
+      setMsg("Verbucht!");
       onAction();
     } catch (e: any) {
-      setMsg("❌ " + (e.message || "Fehler"));
+      setMsg("Fehler: " + (e.message || ""));
     } finally {
       setBusy(false);
     }
@@ -213,10 +221,10 @@ function ReceiptCard({
     setMsg("");
     try {
       await deleteReceipt(receipt.id);
-      setMsg("🗑️ Gelöscht");
+      setMsg("Gelöscht");
       onAction();
     } catch (e: any) {
-      setMsg("❌ " + (e.message || "Fehler"));
+      setMsg("Fehler: " + (e.message || ""));
     } finally {
       setBusy(false);
     }
@@ -245,7 +253,7 @@ function ReceiptCard({
         }}
       >
         <span>
-          <strong>📄 {receipt.dateiname}</strong>
+          <strong>{receipt.dateiname}</strong>
           {duplicate && (
             <span
               style={{
@@ -258,7 +266,7 @@ function ReceiptCard({
                 fontWeight: 600,
               }}
             >
-              ⚠️ bereits verbucht ({fmt(duplicate.datum)} ·{" "}
+              bereits verbucht ({fmt(duplicate.datum)} ·{" "}
               {duplicate.gesamtbetrag.toFixed(2)}€ · {duplicate.kategorie})
             </span>
           )}
@@ -301,11 +309,21 @@ function ReceiptCard({
                   marginBottom: "0.5rem",
                 }}
               >
-                🔍 Beleg ansehen
+                Beleg ansehen
               </button>
             ) : null}
           </div>
           <div style={{ flex: "1 1 300px" }}>
+            {!receipt.kiDaten.datum && (
+              <p style={{ fontSize: "0.8rem", background: t.warningBadgeBg, color: t.warningBadgeText, padding: "0.3rem 0.6rem", borderRadius: 4, marginBottom: "0.5rem" }}>
+                Datum nicht erkannt – bitte eintragen
+              </p>
+            )}
+            {!receipt.kiDaten.gesamtbetrag && (
+              <p style={{ fontSize: "0.8rem", background: t.warningBadgeBg, color: t.warningBadgeText, padding: "0.3rem 0.6rem", borderRadius: 4, marginBottom: "0.5rem" }}>
+                Betrag nicht erkannt – bitte eintragen
+              </p>
+            )}
             <div
               style={{
                 display: "flex",
@@ -316,7 +334,7 @@ function ReceiptCard({
             >
               <div>
                 <label style={{ fontSize: "0.8rem", color: t.textMuted }}>
-                  📅 Datum
+                  Datum
                 </label>
                 <input
                   type="date"
@@ -327,21 +345,26 @@ function ReceiptCard({
               </div>
               <div>
                 <label style={{ fontSize: "0.8rem", color: t.textMuted }}>
-                  💶 Betrag (€)
+                  Betrag (€)
                 </label>
                 <input
                   type="number"
                   step="0.01"
                   min="0"
-                  value={betrag}
+                  value={betrag ?? ""}
                   onChange={(e) => setBetrag(parseFloat(e.target.value) || 0)}
                   style={{ ...inputStyle(t), width: 120 }}
                 />
               </div>
             </div>
             <div style={{ marginBottom: "0.5rem" }}>
+              <span style={{ fontSize: "0.8rem", color: t.textMuted, display: 'block', marginBottom: '0.2rem' }}>
+                {receipt.benutzer}
+              </span>
+            </div>
+            <div style={{ marginBottom: "0.5rem" }}>
               <label style={{ fontSize: "0.8rem", color: t.textMuted }}>
-                📂 Kategorie
+                Kategorie
               </label>
               <select
                 value={kat}
@@ -357,23 +380,184 @@ function ReceiptCard({
             </div>
             <div style={{ marginBottom: "0.75rem" }}>
               <label style={{ fontSize: "0.8rem", color: t.textMuted }}>
-                📝 Notiz
+                Notiz
               </label>
-              <input
-                type="text"
-                value={notiz}
-                onChange={(e) => setNotiz(e.target.value)}
-                placeholder="Optional"
-                style={{ ...inputStyle(t), width: "100%" }}
-              />
+              <div style={{ display: "flex", gap: "0.35rem" }}>
+                <input
+                  type="text"
+                  value={notiz}
+                  onChange={(e) => setNotiz(e.target.value)}
+                  placeholder="Optional"
+                  style={{ ...inputStyle(t), flex: 1 }}
+                />
+                {receipt.kiDaten.notiz_vorschlag && (
+                  <button
+                    onClick={() => setNotiz("")}
+                    title="Vorschlag löschen"
+                    style={{
+                      padding: "0.35rem 0.5rem",
+                      border: `1px solid ${t.borderInput}`,
+                      borderRadius: 4,
+                      background: t.bgCard,
+                      color: t.textMuted,
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      lineHeight: 1,
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+            <div
+              style={{
+                marginTop: "0.5rem",
+                borderTop: splitMode ? `1px solid ${t.border}` : "none",
+                paddingTop: splitMode ? "0.75rem" : 0,
+              }}
+            >
+              <button
+                onClick={() => {
+                  if (!splitMode) {
+                    setSplits([{ id: crypto.randomUUID(), betrag: 0, kategorie: kat, notiz: "" }]);
+                  }
+                  setSplitMode(!splitMode);
+                }}
+                style={{
+                  ...btn,
+                  background: splitMode ? t.warningBadgeBg : t.bgCard,
+                  color: splitMode ? t.warningBadgeText : t.text,
+                  border: `1px solid ${t.borderSecondary}`,
+                  marginBottom: splitMode ? "0.5rem" : 0,
+                  fontSize: "0.8rem",
+                }}
+              >
+                {splitMode ? "Splitten schließen" : "Beleg splitten"}
+              </button>
+
+              {splitMode && (
+                <div
+                  style={{
+                    background: t.bgCard,
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 6,
+                    padding: "0.6rem",
+                    marginBottom: "0.5rem",
+                  }}
+                >
+                  <p style={{ fontSize: "0.75rem", color: t.textMuted, marginBottom: "0.4rem" }}>
+                    Split-Zeilen (Summe:{" "}
+                    <strong>{splits.reduce((a, s) => a + s.betrag, 0).toFixed(2)}€</strong>
+                    {" · "}Rest:{" "}
+                    <strong>{(betrag || 0) - splits.reduce((a, s) => a + s.betrag, 0) > 0
+                      ? ((betrag || 0) - splits.reduce((a, s) => a + s.betrag, 0)).toFixed(2)
+                      : "0.00"}€
+                    </strong>
+                    {" (als „"}
+                    <em>{kat}</em>
+                    {"\")"}
+                  </p>
+                  {splits.map((s, i) => (
+                    <div
+                      key={s.id}
+                      style={{
+                        display: "flex",
+                        gap: "0.35rem",
+                        marginBottom: "0.35rem",
+                        alignItems: "flex-end",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ flex: "0 0 130px" }}>
+                        <select
+                          value={s.kategorie}
+                          onChange={(e) => {
+                            const neu = [...splits];
+                            neu[i] = { ...neu[i], kategorie: e.target.value };
+                            setSplits(neu);
+                          }}
+                          style={{ ...inputStyle(t), width: "100%", fontSize: "0.75rem" }}
+                        >
+                          {KATEGORIEN.map((k) => (
+                            <option key={k} value={k}>{k}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ flex: "0 0 80px" }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={s.betrag || ""}
+                          onChange={(e) => {
+                            const neu = [...splits];
+                            neu[i] = { ...neu[i], betrag: parseFloat(e.target.value) || 0 };
+                            setSplits(neu);
+                          }}
+                          placeholder="0.00"
+                          style={{ ...inputStyle(t), width: "100%", fontSize: "0.75rem" }}
+                        />
+                      </div>
+                      <div style={{ flex: "1 1 100px" }}>
+                        <input
+                          type="text"
+                          value={s.notiz}
+                          onChange={(e) => {
+                            const neu = [...splits];
+                            neu[i] = { ...neu[i], notiz: e.target.value };
+                            setSplits(neu);
+                          }}
+                          placeholder="Kommentar"
+                          style={{ ...inputStyle(t), width: "100%", fontSize: "0.75rem" }}
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          const neu = splits.filter((_, j) => j !== i);
+                          setSplits(neu.length ? neu : [{ id: crypto.randomUUID(), betrag: 0, kategorie: kat, notiz: "" }]);
+                        }}
+                        title="Entfernen"
+                        style={{
+                          padding: "0.25rem 0.4rem",
+                          border: `1px solid ${t.danger}`,
+                          borderRadius: 4,
+                          background: t.bgCard,
+                          color: t.danger,
+                          cursor: "pointer",
+                          fontSize: "0.75rem",
+                          lineHeight: 1,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() =>
+                      setSplits([...splits, { id: crypto.randomUUID(), betrag: 0, kategorie: kat, notiz: "" }])
+                    }
+                    style={{
+                      ...btn,
+                      background: t.bgCard,
+                      color: t.text,
+                      border: `1px solid ${t.borderSecondary}`,
+                      fontSize: "0.75rem",
+                      padding: "0.25rem 0.5rem",
+                    }}
+                  >
+                    + Zeile hinzufügen
+                  </button>
+                </div>
+              )}
             </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <button
                 onClick={handleBook}
-                disabled={busy || betrag <= 0}
+                disabled={busy || !datum || !betrag || betrag <= 0}
                 style={{ ...btn, background: t.primary, color: "#fff" }}
               >
-                💾 Verbuchen
+                Verbuchen
               </button>
               <button
                 onClick={handleDelete}
@@ -385,7 +569,7 @@ function ReceiptCard({
                   border: `1px solid ${t.danger}`,
                 }}
               >
-                🗑️ Löschen
+                Löschen
               </button>
             </div>
             {msg && (
