@@ -24,7 +24,7 @@ npm run build   # tsc -b && vite build
 ## Noteworthy findings
 
 - **API routes** (12 endpoints) — all implemented in `backend/api.py`. Routes: `/api/config`, `/api/upload`, `/api/receipts`, `/api/ledger`, `/api/export/csv`, plus sub-routes. FastAPI docs at `/docs`.
-- **Database auto-initializes** — `database.py` calls `init_db()` at import time, creating `buchhaltung.db` with tables `belege_roh`, `hauptbuch`, `hauptbuch_positionen`.
+- **Database auto-initializes** — `database.py` calls `init_db()` at import time, creating `buchhaltung.db` with tables `belege_roh`, `hauptbuch`.
 - **AI analysis** uses OpenAI `gpt-4o-mini` (set `OPENAI_API_KEY` in `.env`). Copy from `.env.example`.
 - **UI and docs are in German** — all user-facing strings, categories, and comments.
 - **`frontend/src/utils.ts` was removed** — it contained broken dead code that broke `tsc -b`. CSV export is handled in `Ledger.tsx` directly.

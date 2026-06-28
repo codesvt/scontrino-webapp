@@ -72,8 +72,9 @@ class BelegAnalyseErgebnis(BaseModel):
         default=None,
         description="Das Einkaufsdatum im Format JJJJ-MM-TT (z.B. 2026-01-31).",
     )
-    gesamtbetrag: float = Field(
-        description="Der finale, gezahlte Gesamtbetrag (Brutto) des Belegs."
+    gesamtbetrag: Optional[float] = Field(
+        default=None,
+        description="Der finale, gezahlte Gesamtbetrag (Brutto) des Belegs.",
     )
     hauptkategorie: str = Field(
         default="Lebensmittel",
@@ -85,6 +86,13 @@ class BelegAnalyseErgebnis(BaseModel):
     ausreisser: List[AusreisserArtikel] = Field(
         default=[],
         description="Artikel, die nicht zur Hauptkategorie passen.",
+    )
+    notiz_vorschlag: Optional[str] = Field(
+        default=None,
+        description="Kompakter Notiz-Vorschlag (max. 7 Wörter) auf Deutsch als "
+        "Erinnerungsstütze. Geschäftsname (kurz), Ort und gekaufte Produkte/Kategorie "
+        "nennen. Bei Restaurantbesuchen reicht Händler + Ort + Anlass (z.B. "
+        "'Mittagessen') – kein detailliertes Menü. Ortsnamen immer auf Deutsch.",
     )
 
 
@@ -142,6 +150,15 @@ Erlaubte Hauptkategorien: {kategorien_str}
 - Gesamtbetrag: Der finale gezahlte Brutto-Betrag (Saldo/Total/Summe).
 - Datum: Format JJJJ-MM-TT. Zweistellige Jahresangaben (z.B. "26") = 2026.
 - Falls kein Datum lesbar → null zurückgeben.
+- Falls kein Gesamtbetrag lesbar → null zurückgeben.
+- notiz_vorschlag: Maximal 7 Wörter auf Deutsch als kompakte
+  Erinnerungsstütze. Bei Lebensmittelgeschäften genügen Händler und Ort.
+  Bei Fachgeschäften (Apotheke, Baumarkt, Elektronik, etc.) gehören
+  Geschäftsname, Ort und gekaufte Produkte/Abteilung dazu. Bei
+  Restaurantbesuchen reicht Händler + Ort + Anlass (z.B. 'Mittagessen')
+  – kein detailliertes Menü. WICHTIG: Ortsnamen immer auf Deutsch
+  (Brixen, Bozen, Meran – NIEMALS Bolzano, Merano etc.). Falls nicht
+  eindeutig → null zurückgeben.
 
 ## 3. AUSREISSER ERKENNEN (nur bei echten Mischeinkäufen)
 Setze "alarm" = true und liste Ausreißer NUR wenn ALLE Bedingungen zutreffen:

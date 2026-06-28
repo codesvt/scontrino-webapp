@@ -1,5 +1,5 @@
 """
-database.py – SQLite-Datenbankschicht für die Familien-Buchhaltung.
+database.py – SQLite-Datenbankschicht für Scontrino.
 Datenbankpfad konfigurierbar via Umgebungsvariable DB_PATH (siehe .env).
 """
 
@@ -61,7 +61,8 @@ def init_db() -> None:
                 status      TEXT DEFAULT 'offen',
                 ki_json     TEXT NOT NULL,
                 bild_blob   BLOB NOT NULL,
-                bild_hash   TEXT
+                bild_hash   TEXT,
+                benutzer    TEXT DEFAULT 'Walter'
             )
         """)
         conn.execute("""
@@ -71,23 +72,18 @@ def init_db() -> None:
                 gesamtbetrag    REAL NOT NULL,
                 kategorie       TEXT NOT NULL,
                 beleg_roh_id    INTEGER REFERENCES belege_roh(id) ON DELETE SET NULL,
-                notiz           TEXT DEFAULT ''
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS hauptbuch_positionen (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                hauptbuch_id    INTEGER NOT NULL
-                                REFERENCES hauptbuch(id) ON DELETE CASCADE,
-                betrag          REAL NOT NULL,
-                kategorie       TEXT NOT NULL
+                notiz           TEXT DEFAULT '',
+                benutzer        TEXT DEFAULT 'Walter'
             )
         """)
 
     migrationen = [
         ("belege_roh", "bild_hash", "ALTER TABLE belege_roh ADD COLUMN bild_hash TEXT"),
+        ("belege_roh", "benutzer", "ALTER TABLE belege_roh ADD COLUMN benutzer TEXT DEFAULT 'Walter'"),
         ("hauptbuch", "beleg_roh_id", "ALTER TABLE hauptbuch ADD COLUMN beleg_roh_id INTEGER REFERENCES belege_roh(id) ON DELETE SET NULL"),
         ("hauptbuch", "notiz", "ALTER TABLE hauptbuch ADD COLUMN notiz TEXT DEFAULT ''"),
+        ("hauptbuch", "benutzer", "ALTER TABLE hauptbuch ADD COLUMN benutzer TEXT DEFAULT 'Walter'"),
+        ("hauptbuch", "erstellt", "ALTER TABLE hauptbuch ADD COLUMN erstellt DATETIME DEFAULT ''"),
     ]
     for tabelle, spalte, sql in migrationen:
         spalten_status = _spalten_existieren(tabelle, [spalte])
@@ -106,12 +102,12 @@ def init_db() -> None:
 
 
 def speichere_roh_beleg(
-    dateiname: str, ki_daten_dict: Dict[str, Any], bild_bytes: bytes
+    dateiname: str, ki_daten_dict: Dict[str, Any], bild_bytes: bytes, benutzer: str = "Walter"
 ) -> int:
     with _verbindung() as conn:
         cursor = conn.execute(
-            "INSERT INTO belege_roh (dateiname, ki_json, bild_blob, bild_hash) VALUES (?, ?, ?, ?)",
-            (dateiname, json.dumps(ki_daten_dict, ensure_ascii=False), bild_bytes, _bild_hash(bild_bytes)),
+            "INSERT INTO belege_roh (dateiname, ki_json, bild_blob, bild_hash, benutzer) VALUES (?, ?, ?, ?, ?)",
+            (dateiname, json.dumps(ki_daten_dict, ensure_ascii=False), bild_bytes, _bild_hash(bild_bytes), benutzer),
         )
         neue_id = cursor.lastrowid
         if neue_id is None:
@@ -133,13 +129,13 @@ def prüfe_existiert_in_posteingang(bild_bytes: bytes) -> Optional[int]:
     return None
 
 
-def hole_offene_belege() -> List[Tuple[int, str, Dict[str, Any], bytes]]:
+def hole_offene_belege() -> List[Tuple[int, str, Dict[str, Any], bytes, str]]:
     with _verbindung() as conn:
         rows = conn.execute(
-            "SELECT id, dateiname, ki_json, bild_blob "
+            "SELECT id, dateiname, ki_json, bild_blob, benutzer "
             "FROM belege_roh WHERE status = 'offen' ORDER BY timestamp ASC"
         ).fetchall()
-    return [(r["id"], r["dateiname"], json.loads(r["ki_json"]), r["bild_blob"]) for r in rows]
+    return [(r["id"], r["dateiname"], json.loads(r["ki_json"]), r["bild_blob"], r["benutzer"]) for r in rows]
 
 
 def loesche_roh_beleg(beleg_roh_id: int) -> None:
@@ -174,36 +170,50 @@ def verbuche_eintrag(
     betrag: float,
     kategorie: str,
     notiz: str = "",
+    benutzer: str = "Walter",
     positionen: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     with _verbindung() as conn:
-        cursor = conn.execute(
-            "INSERT INTO hauptbuch (datum, gesamtbetrag, kategorie, beleg_roh_id, notiz) VALUES (?, ?, ?, ?, ?)",
-            (datum, betrag, kategorie, beleg_roh_id, notiz),
-        )
-        hauptbuch_id = cursor.lastrowid
-
         if positionen:
+            sum_splits = sum(p["betrag"] for p in positionen if p["betrag"] > 0)
             for pos in positionen:
+                if pos["betrag"] > 0:
+                    conn.execute(
+                        "INSERT INTO hauptbuch (datum, gesamtbetrag, kategorie, beleg_roh_id, notiz, benutzer, erstellt) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+                        (datum, pos["betrag"], pos["kategorie"], beleg_roh_id, pos.get("notiz", ""), benutzer),
+                    )
+            rest = round(betrag - sum_splits, 2)
+            if rest > 0.005:
                 conn.execute(
-                    "INSERT INTO hauptbuch_positionen (hauptbuch_id, betrag, kategorie) "
-                    "VALUES (?, ?, ?)",
-                    (hauptbuch_id, float(pos["betrag"]), pos["kategorie"]),
+                    "INSERT INTO hauptbuch (datum, gesamtbetrag, kategorie, beleg_roh_id, notiz, benutzer, erstellt) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+                    (datum, rest, kategorie, beleg_roh_id, notiz, benutzer),
                 )
+        else:
+            conn.execute(
+                "INSERT INTO hauptbuch (datum, gesamtbetrag, kategorie, beleg_roh_id, notiz, benutzer, erstellt) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+                (datum, betrag, kategorie, beleg_roh_id, notiz, benutzer),
+            )
 
         if beleg_roh_id is not None:
             conn.execute("UPDATE belege_roh SET status = 'verbucht', bild_blob = X'' WHERE id = ?", (beleg_roh_id,))
 
-        logger.info("Eintrag verbucht: id=%d, datum=%s, betrag=%.2f, kategorie=%s", hauptbuch_id, datum, betrag, kategorie)
+        logger.info("Eintrag verbucht: datum=%s, gesamt=%.2f, teilbeträge=%s", datum, betrag, bool(positionen))
 
 
-def hole_hauptbuch_daten() -> List[Tuple[int, str, float, str, Optional[int], str]]:
+def hole_hauptbuch_daten() -> List[Tuple[int, str, float, str, Optional[int], str, str, str]]:
     with _verbindung() as conn:
         rows = conn.execute(
-            "SELECT id, datum, gesamtbetrag, kategorie, beleg_roh_id, notiz "
+            "SELECT id, datum, gesamtbetrag, kategorie, beleg_roh_id, notiz, benutzer, "
+            "COALESCE(erstellt, '') as erstellt "
             "FROM hauptbuch ORDER BY datum DESC, id DESC"
         ).fetchall()
-    return [(r["id"], r["datum"], r["gesamtbetrag"], r["kategorie"], r["beleg_roh_id"], r["notiz"]) for r in rows]
+    return [(r["id"], r["datum"], r["gesamtbetrag"], r["kategorie"], r["beleg_roh_id"], r["notiz"], r["benutzer"], r["erstellt"]) for r in rows]
+
+
+def hole_roh_beleg_benutzer(beleg_roh_id: int) -> str:
+    with _verbindung() as conn:
+        row = conn.execute("SELECT benutzer FROM belege_roh WHERE id = ?", (beleg_roh_id,)).fetchone()
+    return row["benutzer"] if row else "Walter"
 
 
 def hole_beleg_bild(beleg_roh_id: int) -> Optional[bytes]:

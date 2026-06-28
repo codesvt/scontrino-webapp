@@ -5,9 +5,10 @@ export async function getConfig() {
   return r.json();
 }
 
-export async function uploadFiles(files: FileList | File[]): Promise<{ jobId: string; total: number }> {
+export async function uploadFiles(files: FileList | File[], benutzer: string = "Walter"): Promise<{ jobId: string; total: number }> {
   const fd = new FormData();
   for (const f of files) fd.append('files', f);
+  fd.append('benutzer', benutzer);
   const r = await fetch(`${BASE}/upload`, { method: 'POST', body: fd });
   return r.json();
 }
@@ -30,7 +31,7 @@ export function getReceiptImageUrl(receiptId: number) {
   return `${BASE}/receipts/${receiptId}/image`;
 }
 
-export async function bookReceipt(receiptId: number, data: { datum: string; betrag: number; kategorie: string; notiz: string }) {
+export async function bookReceipt(receiptId: number, data: { datum: string; betrag: number; kategorie: string; notiz: string; positionen?: { betrag: number; kategorie: string; notiz: string }[] }) {
   const r = await fetch(`${BASE}/receipts/${receiptId}/book`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -49,7 +50,7 @@ export async function getLedger() {
   return r.json();
 }
 
-export async function addManualEntry(data: { datum: string; betrag: number; kategorie: string; notiz: string }) {
+export async function addManualEntry(data: { datum: string; betrag: number; kategorie: string; notiz: string; benutzer: string }) {
   const r = await fetch(`${BASE}/ledger/manual`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
