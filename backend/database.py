@@ -76,15 +76,6 @@ def init_db() -> None:
                 benutzer        TEXT DEFAULT 'Walter'
             )
         """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS hauptbuch_positionen (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                hauptbuch_id    INTEGER NOT NULL
-                                REFERENCES hauptbuch(id) ON DELETE CASCADE,
-                betrag          REAL NOT NULL,
-                kategorie       TEXT NOT NULL
-            )
-        """)
 
     migrationen = [
         ("belege_roh", "bild_hash", "ALTER TABLE belege_roh ADD COLUMN bild_hash TEXT"),

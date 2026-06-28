@@ -348,11 +348,10 @@ function ReceiptCard({
                   Betrag (€)
                 </label>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={betrag ?? ""}
-                  onChange={(e) => setBetrag(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setBetrag(parseFloat(e.target.value.replace(",", ".")) || 0)}
                   style={{ ...inputStyle(t), width: 120 }}
                 />
               </div>
@@ -462,56 +461,51 @@ function ReceiptCard({
                     <div
                       key={s.id}
                       style={{
-                        display: "flex",
-                        gap: "0.35rem",
-                        marginBottom: "0.35rem",
-                        alignItems: "flex-end",
-                        flexWrap: "wrap",
+                        display: "grid",
+                        gridTemplateColumns: "1fr 85px 1fr auto",
+                        gap: "0.4rem",
+                        marginBottom: "0.4rem",
+                        alignItems: "end",
                       }}
                     >
-                      <div style={{ flex: "0 0 130px" }}>
-                        <select
-                          value={s.kategorie}
-                          onChange={(e) => {
-                            const neu = [...splits];
-                            neu[i] = { ...neu[i], kategorie: e.target.value };
-                            setSplits(neu);
-                          }}
-                          style={{ ...inputStyle(t), width: "100%", fontSize: "0.75rem" }}
-                        >
-                          {KATEGORIEN.map((k) => (
-                            <option key={k} value={k}>{k}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div style={{ flex: "0 0 80px" }}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={s.betrag || ""}
-                          onChange={(e) => {
-                            const neu = [...splits];
-                            neu[i] = { ...neu[i], betrag: parseFloat(e.target.value) || 0 };
-                            setSplits(neu);
-                          }}
-                          placeholder="0.00"
-                          style={{ ...inputStyle(t), width: "100%", fontSize: "0.75rem" }}
-                        />
-                      </div>
-                      <div style={{ flex: "1 1 100px" }}>
-                        <input
-                          type="text"
-                          value={s.notiz}
-                          onChange={(e) => {
-                            const neu = [...splits];
-                            neu[i] = { ...neu[i], notiz: e.target.value };
-                            setSplits(neu);
-                          }}
-                          placeholder="Kommentar"
-                          style={{ ...inputStyle(t), width: "100%", fontSize: "0.75rem" }}
-                        />
-                      </div>
+                      <select
+                        value={s.kategorie}
+                        onChange={(e) => {
+                          const neu = [...splits];
+                          neu[i] = { ...neu[i], kategorie: e.target.value };
+                          setSplits(neu);
+                        }}
+                        style={{ ...inputStyle(t), width: "100%", fontSize: "0.75rem" }}
+                      >
+                        {KATEGORIEN.map((k) => (
+                          <option key={k} value={k}>{k}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={s.betrag > 0 ? s.betrag.toFixed(2) : ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(",", ".");
+                          if (val !== "" && !/^\d*\.?\d{0,2}$/.test(val)) return;
+                          const neu = [...splits];
+                          neu[i] = { ...neu[i], betrag: val === "" ? 0 : parseFloat(val) };
+                          setSplits(neu);
+                        }}
+                        placeholder="0.00"
+                        style={{ ...inputStyle(t), width: "100%", fontSize: "0.75rem" }}
+                      />
+                      <input
+                        type="text"
+                        value={s.notiz}
+                        onChange={(e) => {
+                          const neu = [...splits];
+                          neu[i] = { ...neu[i], notiz: e.target.value };
+                          setSplits(neu);
+                        }}
+                        placeholder="Notiz"
+                        style={{ ...inputStyle(t), width: "100%", fontSize: "0.75rem" }}
+                      />
                       <button
                         onClick={() => {
                           const neu = splits.filter((_, j) => j !== i);
@@ -519,7 +513,7 @@ function ReceiptCard({
                         }}
                         title="Entfernen"
                         style={{
-                          padding: "0.25rem 0.4rem",
+                          padding: "0.3rem 0.45rem",
                           border: `1px solid ${t.danger}`,
                           borderRadius: 4,
                           background: t.bgCard,
@@ -621,9 +615,10 @@ function ImageViewer({ url, onClose }: { url: string; onClose: () => void }) {
           position: "fixed",
           top: "0.75rem",
           right: "1rem",
-          background: "rgba(255,255,255,0.15)",
+          background: "#c62828",
           color: "#fff",
           border: "none",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
           borderRadius: 6,
           padding: "0.4rem 0.8rem",
           fontSize: "1.2rem",

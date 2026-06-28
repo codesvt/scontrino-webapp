@@ -6,8 +6,14 @@ services:
     environment:
       - OPENAI_API_KEY
       - DB_PATH=/data/buchhaltung.db
+      - BACKUP_DIR=/backups
+      - BACKUP_RETENTION_DAYS=30
     volumes:
       - buchhaltung_data:/data
+      # USB-Stick für Backups einbinden:
+      # Passe /pfad/zum/usb-stick an den tatsächlichen Mount-Point an
+      # (z.B. /mnt/usb, /media/usb, /run/media/deinuser/STICKNAME)
+      - /media/usb/scontrino-webapp-backup:/backups
     restart: unless-stopped
 
 volumes:

@@ -3,7 +3,9 @@ import io
 import logging
 import os
 import threading
+import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Tuple
 
 from PIL import Image
@@ -11,6 +13,8 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+
+from backup.backup import BackupScheduler
 
 from database import (
     hole_offene_belege, hole_beleg_bild, loesche_roh_beleg,
@@ -24,7 +28,19 @@ from receipt_auditor import BelegAuditor
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+API_PACING = 0.3
+
+_backup_scheduler = BackupScheduler()
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    _backup_scheduler.start()
+    yield
+    _backup_scheduler.stop()
+
+
+app = FastAPI(lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -109,6 +125,7 @@ def _process_uploads(job_id: str, files: List[Tuple[str, bytes]], benutzer: str 
 
             ki_dict = _ki_dict_aus_ergebnis(ergebnis)
             neue_id = speichere_roh_beleg(filename, ki_dict, contents, benutzer)
+            time.sleep(API_PACING)
 
             with _jobs_lock:
                 _jobs[job_id]["results"][filename] = {
